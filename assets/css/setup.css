@@ -1,0 +1,25 @@
+/* Setup guide: a plain, numbered how-to in the same label palette. */
+
+.doc { max-width: var(--track); margin: 0 auto; padding: 1rem var(--gutter-r) 3rem var(--gutter-l); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
+.back { font-weight: 700; font-size: 0.9375rem; }
+.hero { display: grid; gap: 0.6rem; }
+.hero h1 { font-size: 2.3rem; }
+.hero p { font-size: 1.125rem; color: var(--ink-2); max-width: 36ch; }
+
+.how { display: grid; gap: 0.5rem; background: var(--label-bg); color: var(--label-ink); border-radius: var(--r-l); padding: 1rem 1.1rem; transform: rotate(-0.8deg); box-shadow: var(--shadow); }
+.how div { display: grid; gap: 0.1rem; padding-left: 1.3rem; position: relative; }
+.how div::before { content: ""; position: absolute; left: 0; top: 0.45rem; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: #f4cc2a; }
+.how div:not(:last-child)::after { content: ""; position: absolute; left: 0.27rem; top: 1.15rem; bottom: -0.55rem; width: 2px; background: rgba(255, 255, 255, 0.35); }
+.how b { font-weight: 800; }
+.how span { font-size: 0.9375rem; opacity: 0.88; }
+
+.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: 1.1rem; }
+.steps > li { counter-increment: step; background: var(--surface); border-radius: var(--r-m); padding: 1rem 1rem 1.05rem 3.4rem; position: relative; box-shadow: inset 0 0 0 1.5px var(--line); display: grid; gap: 0.6rem; min-width: 0; }
+.steps > li::before { content: counter(step); position: absolute; left: 0.9rem; top: 0.85rem; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--lemon); color: var(--on-lemon); font: 400 1.1rem/1.9rem var(--display); text-align: center; }
+.steps h2 { font: 800 1.1875rem/1.25 var(--body); }
+.steps p, .steps li li { font-size: 1rem; line-height: 1.5; }
+.steps ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.4rem; }
+.aside { font-size: 0.9375rem !important; color: var(--ink-2); background: var(--well); border-radius: var(--r-s); padding: 0.65rem 0.8rem; }
+.code { margin: 0; background: var(--ink); color: var(--paper); border-radius: var(--r-s); padding: 0.8rem; font-size: 0.75rem; line-height: 1.45; overflow-x: auto; white-space: pre; }
+.asks li { padding-bottom: 0.2rem; }
+.btnrow { display: flex; gap: 0.55rem; flex-wrap: wrap; }

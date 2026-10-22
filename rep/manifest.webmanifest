@@ -1,0 +1,15 @@
+{
+  "name": "Pocket Coach",
+  "short_name": "Coach",
+  "description": "A solar booth rep's pocket coach. Everything stays on this phone.",
+  "start_url": "./#coach",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f8",
+  "theme_color": "#2445b3",
+  "icons": [
+    { "src": "../assets/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "../assets/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "../assets/img/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

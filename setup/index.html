@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Set Up Your Phone</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../assets/img/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,500;0,700;0,800;1,400&display=swap">
+<link rel="stylesheet" href="../assets/css/base.css">
+<link rel="stylesheet" href="../assets/css/setup.css">
+</head>
+<body>
+<div class="demo-ribbon"><b>Demo.</b> Nothing here sends or stores anything.</div>
+<main class="doc">
+  <a class="back" href="../rep/#more">Back to the coach</a>
+  <header class="hero">
+    <h1 class="display">Set it up on your phone</h1>
+    <p>About 15 minutes, once. It all runs on your own phone and your own free Google account. Nobody else sees your list, and nothing goes through anyone else's computer.</p>
+  </header>
+
+  <section class="how" aria-label="How it fits together">
+    <div><b>Shopper scans your code</b><span>sees their roof, picks the times that suit them</span></div>
+    <div><b>Your Google Form gets the request</b><span>a row in your own Sheet, and an email to you</span></div>
+    <div><b>You enter it in the tablet</b><span>so it's credited to you, then text them the exact time</span></div>
+  </section>
+
+  <ol class="steps">
+    <li>
+      <h2>Make your request form</h2>
+      <p>Free with any Google account. Easiest on a computer, at <a href="https://forms.google.com" target="_blank" rel="noopener">forms.google.com</a>.</p>
+      <ul>
+        <li>Start a blank form called <b>Solar requests</b>.</li>
+        <li>Add three questions: <b>Name</b> (short answer), <b>Phone</b> (short answer) and <b>Details</b> (paragraph).</li>
+        <li>In Settings, turn off collecting email addresses and anything that needs sign-in.</li>
+        <li>On the Responses tab, link it to a Google Sheet. That Sheet is your record of each request and each person's OK to text.</li>
+      </ul>
+    </li>
+    <li>
+      <h2>Connect it to your coach</h2>
+      <ul>
+        <li>In the form, open the three-dot menu and choose <b>Get pre-filled link</b>.</li>
+        <li>Type <b>NAME</b>, <b>PHONE</b> and <b>DETAILS</b> as the three answers, then <b>Get link</b> and <b>Copy link</b>.</li>
+        <li>In the coach, go to More and paste it into <b>Your Google Form's pre-filled link</b>. It says Connected when it's right.</li>
+      </ul>
+      <p class="aside">Your name, number and form go inside your own code and links, after the # sign. Browsers never send that part to any website, so they're never stored anywhere but your phone.</p>
+    </li>
+    <li>
+      <h2>Get pinged with the details</h2>
+      <p>Google's own alert only says "new response". This short script, saved in your own Sheet, emails you the name, number and times with a one-tap text link, so you can answer within five minutes.</p>
+      <ul>
+        <li>In your Sheet: <b>Extensions</b>, then <b>Apps Script</b>. Paste this in and save.</li>
+      </ul>
+      <pre class="code" id="script">function onFormSubmit(e) {
+  var v = e.namedValues;
+  var name = (v['Name'] || [''])[0];
+  var phone = (v['Phone'] || [''])[0];
+  var details = (v['Details'] || [''])[0];
+  var digits = String(phone).replace(/\D/g, '');
+  var html = '&lt;p&gt;&lt;b&gt;' + name + '&lt;/b&gt; ' + phone + '&lt;/p&gt;'
+    + '&lt;pre&gt;' + details + '&lt;/pre&gt;'
+    + '&lt;p&gt;&lt;a href="sms:+1' + digits + '"&gt;Text ' + name + ' now&lt;/a&gt;&lt;/p&gt;';
+  MailApp.sendEmail({
+    to: Session.getEffectiveUser().getEmail(),
+    subject: 'New solar request: ' + name,
+    htmlBody: html
+  });
+}</pre>
+      <div class="btnrow"><button class="btn small" type="button" data-copy="script">Copy the script</button></div>
+      <ul>
+        <li>Open <b>Triggers</b> (the clock icon), add a trigger for <b>onFormSubmit</b>, event source <b>From spreadsheet</b>, type <b>On form submit</b>, and allow it to send email as you.</li>
+        <li>On your phone, turn on notifications for the Gmail app.</li>
+        <li>Test it: open your page on another phone, send a request, and watch for the email.</li>
+      </ul>
+    </li>
+    <li>
+      <h2>Put the coach on your home screen</h2>
+      <ul>
+        <li>Open the coach in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</li>
+        <li>It works with no signal in the store, and your maybe list stays on this phone. Tap <b>Save a backup</b> in More now and then.</li>
+      </ul>
+    </li>
+    <li>
+      <h2>Share your code</h2>
+      <ul>
+        <li>On the floor, tap <b>Show my code</b>. Shoppers scan your screen from about a meter away, and it keeps your screen awake while it's up.</li>
+        <li>Printed cards, the counter sign and door hangers are optional, for later, in More.</li>
+      </ul>
+    </li>
+    <li>
+      <h2>Clear it with your manager first</h2>
+      <p>Until you have a yes in writing, use the demo only, with no real customers.</p>
+      <ul class="asks">
+        <li><b>Can I use my own page, code and cards, and can they name the company?</b> The OK-to-text wording has to name the company, so real sign-ups wait on this.</li>
+        <li><b>Can I keep requests and a maybe list in my own Google Sheet and phone, and text from my own number?</b> Company policy treats customer details as confidential.</li>
+        <li><b>Does time spent texting after hours count as work time?</b> Postings say work outside the store needs approval.</li>
+        <li><b>Is a rough estimate on my page OK for an appointment setter?</b> In California, quoting prices or savings can turn a setter into a salesperson who has to register.</li>
+        <li><b>Which privacy note should the page show?</b> California requires one on any page that collects names and numbers.</li>
+      </ul>
+      <p class="aside">Already settled: appointments you book outside the store count for you. Enter every one in the tablet yourself so it's credited to you.</p>
+    </li>
+  </ol>
+</main>
+<script type="module">
+  import { copyText, toast } from '../assets/js/util.js';
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const text = document.getElementById(b.dataset.copy).textContent;
+    (await copyText(text)) ? toast('Copied') : toast('Copy blocked. Press and hold the text to copy.');
+  });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js', { scope: '../' }).catch(() => {});
+</script>
+</body>
+</html>

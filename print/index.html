@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Booth Print Kit</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../assets/img/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,500;0,700;0,800;1,400&display=swap">
+<link rel="stylesheet" href="../assets/css/base.css">
+<link rel="stylesheet" href="../assets/css/print.css">
+</head>
+<body>
+<div class="demo-ribbon screen-only"><b>Demo.</b> Your name and number come from this phone's settings.</div>
+<div class="controls screen-only">
+  <a class="back" href="../rep/#more">Back to the coach</a>
+  <h1 class="display">Print kit</h1>
+  <div class="seg" role="tablist" aria-label="What to print" id="tabs">
+    <button type="button" data-item="card">No-time cards</button>
+    <button type="button" data-item="friend">Friend cards</button>
+    <button type="button" data-item="sign">Counter sign</button>
+    <button type="button" data-item="hanger">Door hanger</button>
+  </div>
+  <p class="note" id="note"></p>
+  <label class="field" id="street-field" hidden><span>Street where someone you booked just went solar</span><input class="input" id="street" placeholder="Orchard Ave"></label>
+  <div class="btnrow"><button class="btn" type="button" id="print">Print or save as PDF</button></div>
+  <p class="small muted" id="who"></p>
+</div>
+<div class="stage" id="stage"></div>
+<script src="../assets/vendor/qrcode.js"></script>
+<script type="module" src="../assets/js/print.js"></script>
+</body>
+</html>
