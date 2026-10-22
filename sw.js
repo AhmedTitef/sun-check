@@ -1,7 +1,7 @@
 // Keeps the coach, the print kit and the page working with no signal in the store.
 // Only this site's own files are cached; map, sun and form requests go straight out.
 
-const VERSION = 'suncheck-v5';
+const VERSION = 'suncheck-v6';
 const SHELL = [
   './',
   './index.html',
@@ -34,6 +34,10 @@ const SHELL = [
   './assets/data/sce-zips.json',
   './assets/vendor/qrcode.js',
   './assets/img/icon.svg',
+  './assets/fonts/AlfaSlabOne-400-normal-latin.woff2',
+  './assets/fonts/AlfaSlabOne-400-normal-latin-ext.woff2',
+  './assets/fonts/AtkinsonHyperlegibleNext-latin.woff2',
+  './assets/fonts/AtkinsonHyperlegibleNext-italic-latin.woff2',
   './assets/img/icon-180.png',
   './assets/img/icon-192.png',
   './assets/img/icon-512.png',
