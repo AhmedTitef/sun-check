@@ -45,7 +45,7 @@ const STATIC = {
   't-title1': 'title1', 't-sub1': 'sub1', 't-street': 'street', 't-zip': 'zip', 't-show': 'show', 't-locate': 'locate',
   next1: 'next1', 't-title2': 'title2', 't-bill': 'bill', 't-own': 'own', 't-snap': 'snap', 't-snapnote': 'snapNote',
   't-how': 'how', 't-howtext': 'howText', next2: 'next2', 't-title3': 'title3', 't-meet': 'meetQ', 't-partner': 'partner',
-  't-name': 'name', 't-phone': 'phone', 't-email': 'email', privacy: 'privacy', 't-back2': 'back', 't-back3': 'back',
+  't-name': 'name', 't-phone': 'phone', 't-email': 'email', privacy: 'privacy', 't-back2': 'back', 't-back3': 'back', 't-replay': 'replay',
 };
 
 function applyText() {
@@ -66,6 +66,7 @@ function applyText() {
   ctx.textContent = line;
   $('#t-sub3').textContent = t('sub3', { rep: repName() });
   renderFacing(); renderPlace(); renderNeighbors(); renderTradeoff(); renderNumbers(); renderTimes();
+  if (S.ready && !S.animating) { setCaption(takeaway(), true); drawFrame({ labels: true, glow: 0.5 }); }
   if (!$('#s4').hidden) renderDone();
 }
 
@@ -205,20 +206,25 @@ async function showRoof(g) {
   S.base = buildBase();
   const c = centerLL();
   const facing = facingFor(c);
+  const early = await Promise.race([facing, new Promise(r => setTimeout(() => r('late'), 2500))]);
+  if (early && early !== 'late') { S.frontAuto = { bearing: early.bearing }; S.front = { bearing: early.bearing, how: 'auto' }; }
   S.sun = await sunAt(c.lat, c.lon, chosenAz());
   recompute();
   setLoader(false);
   renderScale();
-  $('#tip').textContent = S.layout ? t('tapRoof') : t('noOutline');
+  renderTip();
+  $('.stage-wrap').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   renderNeighbors();
   await animate();
-  const f = await facing;
-  if (f) { S.frontAuto = { bearing: f.bearing }; S.front = { bearing: f.bearing, how: 'auto' }; }
+  if (early === 'late') {
+    const f = await facing;
+    if (f) { S.frontAuto = { bearing: f.bearing }; S.front = { bearing: f.bearing, how: 'auto' }; }
+  }
   await refreshSun();
   S.ready = true;
   renderFacing(); renderPlace(); renderTradeoff();
   $('#next1').hidden = false;
-  drawFrame({ labels: true });
+  drawFrame({ labels: true, glow: 0.5 });
 }
 
 // Which way the front faces: from the house's middle toward the street point the
@@ -231,6 +237,10 @@ function facingFor(c) {
   }
   const streetName = (g.street || g.address || '').split(',')[0].replace(/^\s*\d+[A-Za-z]?\s+/, '');
   return frontBearing(c.lat, c.lon, streetName).catch(() => null);
+}
+
+function renderTip() {
+  $('#tip').textContent = S.layout ? `${S.panels.length ? `${t('layoutChip', { n: S.panels.length })}. ` : ''}${t('tapRoof')}` : t('noOutline');
 }
 
 function centerLL() {
@@ -358,7 +368,42 @@ function drawPanel(cellWorld, p) {
 }
 
 // One frame. sweep: 0..1 along today's sun path; shown: how many panels; labels: front/back chips.
-function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCache } = {}) {
+const cosd = d => Math.cos((d * Math.PI) / 180);
+const word4 = b => t(`dir.${['N', 'E', 'S', 'W'][Math.round((((b % 360) + 360) % 360) / 90) % 4]}`);
+const splitBearing = () => (S.front ? S.front.bearing : S.layout ? S.layout.halves[0].bearing : null);
+
+// Warm the half of the roof that faces the sun; dim the other half.
+function drawGlow(sunBearing, strength) {
+  const F = splitBearing();
+  if (F == null || !S.layout || strength <= 0) return;
+  const ring = S.layout.ring.map(scr);
+  const [cx, cy] = scr(S.layout.center);
+  const lit = cosd(sunBearing - F) >= 0 ? F : F + 180;
+  const k = Math.min(1, Math.abs(cosd(sunBearing - F)) * 1.4) * strength;
+  const half = (bearing, fill) => {
+    const r = (bearing * Math.PI) / 180, nx = Math.sin(r), ny = -Math.cos(r), px = -ny, py = nx, L = 3000;
+    ctx.beginPath();
+    ctx.moveTo(cx + px * L, cy + py * L); ctx.lineTo(cx + px * L + nx * L, cy + py * L + ny * L);
+    ctx.lineTo(cx - px * L + nx * L, cy - py * L + ny * L); ctx.lineTo(cx - px * L, cy - py * L); ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+  };
+  ctx.save();
+  ctx.beginPath();
+  ring.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+  ctx.closePath();
+  ctx.clip();
+  half(lit, `rgba(255, 196, 64, ${0.45 * k})`);
+  half(lit + 180, `rgba(8, 12, 36, ${0.38 * k})`);
+  ctx.restore();
+}
+
+const hourLabel = d => {
+  const h = d.getHours() + (d.getMinutes() >= 30 ? 1 : 0);
+  if (h === 12) return t('noon');
+  return new Date(2026, 0, 1, h).toLocaleTimeString(lang === 'es' ? 'es-MX' : 'en-US', { hour: 'numeric' });
+};
+
+function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCache, glow = 0 } = {}) {
   const v = S.view;
   if (!S.base || !v) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -371,6 +416,10 @@ function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCach
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (path && glow > 0) {
+    const i = Math.min(path.pts.length - 1, Math.round(sweep * (path.pts.length - 1)));
+    drawGlow(sweep < 1 ? path.pts[i].bearing : bestSideBearing(), glow);
+  }
   const n = shown == null ? S.panels.length : shown;
   for (let i = 0; i < S.panels.length; i++) {
     const p = typeof n === 'number' ? (i < Math.floor(n) ? 1 : i === Math.floor(n) ? n - Math.floor(n) : 0) : 1;
@@ -407,12 +456,12 @@ function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCach
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#f4cc2a'; ctx.lineWidth = 2;
       for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * 12, y + Math.sin(a) * 12); ctx.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 16); ctx.stroke(); }
+      // the clock rides along with the sun, so it reads as one day
+      const at = path.pts[upto].at;
+      chip(hourLabel(at), x, y - 30, '#f4cc2a', '#141f48');
     }
-    if (sweep > 0.02) chip(t('sunrise', { t: clock(path.sunrise) }), pts[0][0], pts[0][1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
-    if (sweep >= 0.98) chip(t('sunset', { t: clock(path.sunset) }), pts.at(-1)[0], pts.at(-1)[1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
-  }
-  if (S.panels.length && (shown == null || shown >= S.panels.length)) {
-    chip(t('layoutChip', { n: S.panels.length }), 0, 20, 'rgba(13, 21, 51, 0.82)', '#ffffff');
+    if (sweep > 0.02) chip(t('sunrise', { t: clock(path.sunrise), d: word4(path.pts[0].bearing) }), pts[0][0], pts[0][1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
+    if (sweep >= 0.98) chip(t('sunset', { t: clock(path.sunset), d: word4(path.pts.at(-1).bearing) }), pts.at(-1)[0], pts.at(-1)[1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
   }
   if (labels && S.front && S.layout) {
     const [cx, cy] = S.layout.center;
@@ -426,25 +475,70 @@ function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCach
 }
 
 let sunPathCache = null;
+
+// The side with the most sun over a year, from the front/back line when known.
+function bestSideBearing() {
+  const F = splitBearing();
+  if (F == null) return 180;
+  return dirFactor(F) >= dirFactor(F + 180) ? F : (F + 180) % 360;
+}
+
+function sweepCaption(path) {
+  if (!path) return '';
+  const noon = path.pts.reduce((a, p) => (p.alt > a.alt ? p : a)).bearing;
+  let side = t('sideOf', { dir: word4(noon) });
+  if (S.front) {
+    const d = Math.abs(((noon - S.front.bearing + 540) % 360) - 180);
+    side = d < 60 ? t('sideFront') : d > 120 ? t('sideBack') : side;
+  }
+  return t('sweepCap', { rise: word4(path.pts[0].bearing), side, set: word4(path.pts.at(-1).bearing) });
+}
+
+function takeaway() {
+  if (S.front) {
+    const ff = dirFactor(S.front.bearing), fb = dirFactor(S.front.bearing + 180);
+    if (Math.abs(ff - fb) < 0.04) return t('takeBoth');
+    return ff > fb ? t('takeFront') : t('takeBack');
+  }
+  if (S.layout) return t('takeSide', { dir: word4(S.layout.halves[0].bearing) });
+  return t('takeSun', { h: S.sun ? S.sun.sunHours : 6 });
+}
+
+function setCaption(text, take) {
+  const el = $('#sweepcap');
+  el.textContent = text;
+  el.classList.toggle('take', Boolean(take));
+}
+
 function animate() {
   sunPathCache = sunPath();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { drawFrame({ labels: true }); return Promise.resolve(); }
+  $('#replay').hidden = true;
+  if (reduce) { setCaption(takeaway(), true); drawFrame({ labels: true, glow: 0.5 }); $('#replay').hidden = false; return Promise.resolve(); }
   S.animating = true;
-  const SWEEP = 2300, n = S.panels.length, DROP = Math.min(1700, 260 + n * 85);
+  document.body.dataset.anim = '1';
+  setCaption(sweepCaption(sunPathCache), false);
+  const SWEEP = 4300, HOLD = 900, n = S.panels.length, DROP = Math.min(1700, 300 + n * 85);
   const ease = x => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
+  const pace = window.__pace || 1; // only slowed down when recording a demo video
   return new Promise(done => {
     const t0 = performance.now();
+    let took = false;
     const frame = now => {
-      const e = now - t0;
-      if (e < SWEEP) drawFrame({ sweep: ease(e / SWEEP), shown: 0 });
-      else if (e < SWEEP + DROP) drawFrame({ sweep: 1, shown: ((e - SWEEP) / DROP) * n });
-      else { drawFrame({ sweep: 1, labels: true }); S.animating = false; done(); return; }
+      const e = (now - t0) * pace;
+      if (e < SWEEP) drawFrame({ sweep: ease(e / SWEEP), shown: 0, glow: 1 });
+      else if (e < SWEEP + HOLD) {
+        if (!took) { took = true; setCaption(takeaway(), true); }
+        drawFrame({ sweep: 1, shown: 0, glow: Math.max(0.5, 1 - (e - SWEEP) / HOLD), labels: true });
+      } else if (e < SWEEP + HOLD + DROP) drawFrame({ sweep: 1, shown: ((e - SWEEP - HOLD) / DROP) * n, glow: 0.5, labels: true });
+      else { drawFrame({ sweep: 1, labels: true, glow: 0.5 }); S.animating = false; delete document.body.dataset.anim; $('#replay').hidden = false; done(); return; }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
   });
 }
+
+$('#replay').addEventListener('click', () => { if (!S.animating) animate(); });
 
 function renderScale() {
   const v = S.view;
@@ -470,7 +564,7 @@ canvas.addEventListener('click', async e => {
   if (f && (!S.front || S.front.how === 'auto')) { S.frontAuto = { bearing: f.bearing }; S.front = { bearing: f.bearing, how: 'auto' }; }
   await refreshSun();
   renderFacing(); renderTradeoff();
-  drawFrame({ labels: true });
+  drawFrame({ labels: true, glow: 0.5 });
 });
 
 /* ---------- facing and placement ---------- */
@@ -496,6 +590,7 @@ function recompute() {
   S.est = estimate({ bill: S.bill, util: S.utilKey, sun: S.sun, sideScale, capacity });
   S.panels = S.layout ? choosePanels(S.layout, S.est.panels, back) : [];
   renderNumbers();
+  if (S.geo) renderTip();
 }
 
 function renderFacing() {
@@ -524,7 +619,7 @@ $('#facing').addEventListener('click', async e => {
   renderFacing();
   await refreshSun();
   renderTradeoff();
-  drawFrame({ labels: true });
+  drawFrame({ labels: true, glow: 0.5 });
 });
 
 function renderPlace() {
@@ -542,7 +637,7 @@ $('#place').addEventListener('click', async e => {
   renderPlace();
   await refreshSun();
   renderTradeoff();
-  drawFrame({ labels: true });
+  drawFrame({ labels: true, glow: 0.5 });
 });
 
 function renderTradeoff() {
@@ -774,7 +869,7 @@ window.addEventListener('resize', () => {
   sizeCanvas();
   const center = S.layout ? S.layout.center : project(S.geo.lat, S.geo.lon);
   S.view = makeView(canvas, center, S.layout ? S.layout.extent : null);
-  tilesFor(S.view).then(tl => { S.tiles = tl; S.base = buildBase(); renderScale(); drawFrame({ labels: true }); });
+  tilesFor(S.view).then(tl => { S.tiles = tl; S.base = buildBase(); renderScale(); drawFrame({ labels: true, glow: 0.5 }); });
 });
 
 applyText();

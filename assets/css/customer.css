@@ -183,3 +183,9 @@ details.how p { margin-top: 0.5rem; font-size: 0.875rem; color: var(--ink-2); li
 
 .linkbtn.back { justify-self: start; text-decoration: none; font-weight: 700; padding: 0.4rem 0; }
 .linkbtn.back::before { content: "\2039  "; }
+
+/* Sun sweep caption, then the takeaway */
+.sweepbar { display: grid; gap: 0.55rem; justify-items: start; }
+.sweepcap { font-size: 1rem; font-weight: 600; line-height: 1.4; min-height: 2.8em; }
+.sweepcap.take { font: 400 1.35rem/1.2 var(--display); min-height: 0; }
+.sweepbar .btn svg { width: 1em; height: 1em; }
