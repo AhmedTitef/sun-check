@@ -12,10 +12,10 @@ const blank = () => ({
     store: '',          // left blank until the manager OKs naming the store
     reward: '',         // the current referral reward line, in the rep's words
     stores: ['Store 1', 'Store 2'],
-    spots: ['Entrance', 'Garden', 'Lumber', 'Appliances', 'Checkout'],
+    spots: ['Entrance', 'Garden', 'Hardware', 'Lighting', 'Appliances'],
   },
-  ui: { opener: 0, spot: 'Entrance', where: 'Store 1' },
-  taps: [],        // { t, o (opener id), r (result), spot, where, sample? }
+  ui: { spot: 'Entrance', where: 'Store 1' },
+  taps: [],        // one per chat: { t, o (that day's opener id), r: 'book' | 'no' | 'maybe', spot, where, sample? }
   maybes: [],      // { id, first, phone, address, tags[], consentAt, consentText, start, sent{}, stopped, sample? }
   bookings: [],    // { id, first, last, phone, prefs[], when?, type, both, address, bill, src, ref, created, sent{}, sample? }
   edits: { openers: {}, answers: {} },

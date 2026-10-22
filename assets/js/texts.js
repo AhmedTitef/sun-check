@@ -45,7 +45,7 @@ export function maybeText(step, m, settings) {
     case 2:
       return `Hi ${m.first}, quick tip from ${r}: on Edison's time-of-use plans, power costs the most from 4 to 9 PM, which is why batteries matter under California's current solar rules. Your roof check is here whenever you want it: ${link} ${STOP}`;
     case 3:
-      return `Hi ${m.first}, ${r} here. Evenings and weekends are open next week if that's easier. It's about an hour, and it's best if everyone on the title can be there: ${link} ${STOP}`;
+      return `Hi ${m.first}, ${r} here. Evenings and weekends are open next week if that's easier. It's about an hour, and it's great if everyone on the title can join: ${link} ${STOP}`;
     case 4:
       return `Hi ${m.first}, it's ${r}. Still thinking about solar? No pressure at all. If this summer's bills stung, now is a good time to see real numbers before next summer: ${link} ${STOP}`;
     case 5:
@@ -75,8 +75,6 @@ export function maybeDue(m) {
   return i < 0 ? null : { ...plan[i], index: i, total: plan.length };
 }
 
-const whoLine = b => b.both === 'both' ? 'both owners' : b.both === 'one' ? 'the other owner too, if you can' : '';
-
 // Right after a request: reply within five minutes. Requests carry preferred
 // times; the rep offers two real times from the tablet's consultant calendar.
 export function confirmNowText(b, settings) {
@@ -88,18 +86,18 @@ export function confirmNowText(b, settings) {
   return `Hi ${b.first}, it's ${from(settings)}. You're set for ${fmtWhen(b.when)}${how} with the solar consultant. Reply YES to confirm, or text me a time that works better. ${STOP}`;
 }
 
-// One to two days before: the personal confirm that makes it stick.
+// One to two days before: the personal confirm that makes it stick. It invites
+// the partner rather than demanding both owners, which shoppers read as pressure.
 export function confirmBeforeText(b, settings) {
   const r = me(settings);
-  const who = whoLine(b);
-  const ready = who ? `having ${who} there, and a recent power bill handy (a photo works)` : 'a recent power bill handy (a photo works)';
-  return `Hi ${b.first}, ${r} here. Quick check on ${fmtWhen(b.when)} with the solar consultant. Two things make it worth your time: ${ready}. It's a no-pressure look at real numbers for your home, and if it's not a fit, no hard feelings. Still good for ${fmtTime(b.when)}? ${STOP}`;
+  const partner = b.both === 'solo' ? '' : ", and it's great if everyone on the title can join";
+  return `Hi ${b.first}, ${r} here. Quick check on ${fmtWhen(b.when)} with the solar consultant. It helps to have a recent power bill handy (a photo works)${partner}. It's a no-pressure look at real numbers for your home, and if it's not a fit, no hard feelings. Still good for ${fmtTime(b.when)}? ${STOP}`;
 }
 
 export function voiceMemoScript(b, settings) {
   const r = me(settings);
-  const who = b.both === 'both' ? 'both of you can be there' : b.both === 'one' ? 'everyone on the title can be there' : 'you have the hour free';
-  return `Hey ${b.first}, it's ${r}. Just a quick voice note to confirm ${fmtWhen(b.when)}. The consultant will walk you through real numbers for your house, and it takes about an hour. It really helps if ${who} and you've got a recent power bill handy, even a photo on your phone. No pressure at all. If the time doesn't work anymore, just text me and I'll move it. Talk soon!`;
+  const who = b.both === 'solo' ? '' : " And if your partner can join, even better.";
+  return `Hey ${b.first}, it's ${r}. Just a quick voice note to confirm ${fmtWhen(b.when)}. The consultant will walk you through real numbers for your house, and it takes about an hour. It helps to have a recent power bill handy, even a photo on your phone.${who} No pressure at all. If the time doesn't work anymore, just text me and I'll move it. Talk soon!`;
 }
 
 // After their appointment: every booking gets a neighbor link.

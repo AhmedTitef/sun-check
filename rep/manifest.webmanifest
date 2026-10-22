@@ -2,7 +2,7 @@
   "name": "Pocket Coach",
   "short_name": "Coach",
   "description": "A solar booth rep's pocket coach. Everything stays on this phone.",
-  "start_url": "./#coach",
+  "start_url": "./#floor",
   "scope": "./",
   "display": "standalone",
   "background_color": "#eef2f8",

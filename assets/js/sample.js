@@ -13,8 +13,8 @@ const DAY = 86400000;
 export function sampleData(now = new Date()) {
   const rand = rng(20261022);
   const taps = [];
-  const spots = ['Entrance', 'Garden', 'Lumber', 'Appliances', 'Checkout'];
-  const spotLift = { Entrance: 1.25, Garden: 1.1, Lumber: 0.8, Appliances: 1.0, Checkout: 0.75 };
+  const spots = ['Entrance', 'Garden', 'Hardware', 'Lighting', 'Appliances'];
+  const spotLift = { Entrance: 1.25, Garden: 1.1, Hardware: 0.85, Lighting: 0.95, Appliances: 1.05 };
   const openerLift = { o1: 1.2, o2: 1.05, o3: 1.4, o4: 0.95, o5: 1.0, o6: 0.7, o7: 0.85, o8: 0.9 };
   const openerIds = Object.keys(openerLift);
   // Shifts over the last 9 days: [days ago, start hour, end hour, store]
@@ -22,18 +22,19 @@ export function sampleData(now = new Date()) {
   for (const [ago, h0, h1, where] of shifts) {
     const base = new Date(now.getTime() - ago * DAY); base.setMinutes(0, 0, 0);
     const weekend = [0, 6].includes(base.getDay());
-    const n = Math.round((h1 - h0) * (weekend ? 3.4 : 2.4));
+    const n = Math.round((h1 - h0) * (weekend ? 1.9 : 1.3));
     for (let k = 0; k < n; k++) {
       const t = new Date(base); t.setHours(h0, 0, 0, 0);
       t.setTime(t.getTime() + rand() * (h1 - h0) * 3600000);
       if (t > now) continue;
-      const o = openerIds[Math.floor(rand() * openerIds.length)];
+      const day = Math.floor((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(2026, 0, 1)) / 86400000);
+      const o = openerIds[((day % openerIds.length) + openerIds.length) % openerIds.length];
       const spot = spots[Math.floor(rand() * spots.length)];
       const hour = t.getHours();
       const timeLift = (weekend && hour >= 11 && hour < 13) ? 1.35 : (hour >= 17 ? 1.1 : 1);
       const lift = openerLift[o] * spotLift[spot] * timeLift;
       const x = rand();
-      const r = x < 0.045 * lift ? 'book' : x < 0.16 * lift ? 'owner' : x < 0.42 * lift ? 'stop' : 'pass';
+      const r = x < 0.11 * lift ? 'book' : x < 0.3 * lift ? 'maybe' : 'no';
       taps.push({ t: t.getTime(), o, r, spot, where, sample: true });
     }
   }
