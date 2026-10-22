@@ -51,13 +51,19 @@ export function sampleData(now = new Date()) {
     { id: 's-m2', first: 'Lupe', phone: '9515550119', tags: ['roof'], start: at(2, 11, 5), consentAt: at(2, 11, 5), sent: { 0: at(2, 18, 10) }, sample: true },
     { id: 's-m3', first: 'Dev', phone: '9095550183', tags: ['cost'], start: at(7, 17, 40), consentAt: at(7, 17, 40), sent: { 0: at(7, 18, 30), 1: at(5, 18, 5) }, sample: true },
     { id: 's-m4', first: 'Tony', phone: '9515550162', tags: ['credit'], start: at(20, 15, 0), consentAt: at(20, 15, 0), sent: sentUpTo(4, 20), sample: true },
+    { id: 's-m6', first: 'Grace', phone: '9095550129', tags: ['spouse'], start: at(12, 13, 0), consentAt: at(12, 13, 0), sent: sentUpTo(3, 12), booked: at(5, 19, 10), stopped: at(5, 19, 10), sample: true },
   ];
 
   const bookings = [
     { id: 's-b1', first: 'Maria', last: 'Garcia', phone: '9095550142', when: null, prefs: ['eve', 'sat'], type: 'visit', both: 'both', own: true, address: '5678 Example St, Rialto, CA 92376', bill: 260, utility: 'Southern California Edison', estimate: '17 panels (7 kW), 6.2 sun hours a day', src: 'No-time card', created: now.getTime() - 4 * 60000, sent: {}, sample: true },
     { id: 's-b2', first: 'James', last: 'Nguyen', phone: '9515550128', when: ahead(1, 10), type: 'call', both: 'one', src: 'Booth', created: at(3, 14), sent: { now: at(3, 14, 5) }, sample: true },
-    { id: 's-b3', first: 'Rosa', last: 'Medina', phone: '9095550175', when: new Date(at(2, 17)).toISOString(), type: 'visit', both: 'both', src: 'Booth', created: at(6, 13), sent: { now: at(6, 13, 4), before: at(4, 18) }, sample: true },
+    { id: 's-b3', first: 'Rosa', last: 'Medina', phone: '9095550175', when: new Date(at(2, 17)).toISOString(), type: 'visit', both: 'both', src: 'Booth', created: at(6, 13), sent: { now: at(6, 13, 4), before: at(4, 18) }, outcome: 'showed', outcomeAt: at(2, 19), sample: true },
+    { id: 's-b4', first: 'Hector', last: 'Ruiz', phone: '9515550153', when: new Date(at(4, 18, 30)).toISOString(), type: 'call', both: 'solo', src: 'Her link', created: at(7, 21, 40), sent: { now: at(7, 21, 45), before: at(5, 18) }, outcome: 'showed', outcomeAt: at(4, 19, 30), sample: true },
+    { id: 's-b5', first: 'Dana', last: 'Kim', phone: '9095550188', when: new Date(at(3, 11)).toISOString(), type: 'visit', both: 'both', src: 'Booth', created: at(5, 15), sent: { now: at(5, 15, 3), before: at(4, 18) }, outcome: 'noshow', outcomeAt: at(3, 12), sample: true },
   ];
 
-  return { taps, maybes, bookings };
+  // A sample pilot that started with the sample week, so the comparison has something to show.
+  const pilotStart = new Date(now.getTime() - 8 * DAY);
+  const pilot = { start: ymd(pilotStart), before: { shifts: 9, booked: 6, showed: 4, noshow: 2 }, sample: true };
+  return { taps, maybes, bookings, pilot };
 }

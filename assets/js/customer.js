@@ -51,6 +51,8 @@ const STATIC = {
 function applyText() {
   document.documentElement.lang = lang;
   for (const [id, key] of Object.entries(STATIC)) { const el = document.getElementById(id); if (el) el.textContent = t(key); }
+  street.placeholder = t('streetPh');
+  zipIn.placeholder = t('zipPh');
   $$('.lang [data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
   const ribbon = $('#ribbon');
   ribbon.hidden = live;
@@ -90,6 +92,7 @@ const S = {
 /* ---------- screens ---------- */
 function go(n) {
   for (const i of [1, 2, 3, 4]) $(`#s${i}`).hidden = i !== n;
+  if (n === 1 && S.ready) requestAnimationFrame(() => drawFrame({ labels: true }));
   window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 
@@ -407,6 +410,9 @@ function drawFrame({ sweep = 1, shown = null, labels = false, path = sunPathCach
     }
     if (sweep > 0.02) chip(t('sunrise', { t: clock(path.sunrise) }), pts[0][0], pts[0][1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
     if (sweep >= 0.98) chip(t('sunset', { t: clock(path.sunset) }), pts.at(-1)[0], pts.at(-1)[1] + 18, 'rgba(13, 21, 51, 0.82)', '#ffffff');
+  }
+  if (S.panels.length && (shown == null || shown >= S.panels.length)) {
+    chip(t('layoutChip', { n: S.panels.length }), 0, 20, 'rgba(13, 21, 51, 0.82)', '#ffffff');
   }
   if (labels && S.front && S.layout) {
     const [cx, cy] = S.layout.center;

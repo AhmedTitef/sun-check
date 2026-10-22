@@ -58,6 +58,7 @@ export function clearSamples() {
     d.taps = d.taps.filter(t => !t.sample);
     d.maybes = d.maybes.filter(m => !m.sample);
     d.bookings = d.bookings.filter(b => !b.sample);
+    if (d.settings.pilot && d.settings.pilot.sample) delete d.settings.pilot;
     d.samples = false;
   });
 }

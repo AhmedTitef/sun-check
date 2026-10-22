@@ -3,6 +3,7 @@
 
 import { load, update, clearSamples, clearAll, exportJSON, importJSON, keepData } from './store.js';
 import { OPENERS, ANSWERS, TAGS, PRACTICE_PROMPT } from './content.js';
+import { OPENERS_ES, ANSWERS_ES, RULES, PRACTICE_PROMPT_ES } from './content-es.js';
 import { maybeText, maybeDue, maybePlan, confirmNowText, confirmBeforeText, voiceMemoScript, neighborText, prefsText } from './texts.js';
 import { sampleData } from './sample.js';
 import { $, $$, esc, uid, digits, fmtPhone, validPhone, fmtTime, fmtDay, fmtWhen, smsHref, copyText, shareOrCopy, download, toast, sheet, pageLink, parseForm, ICONS, startOfDay, daysBetween } from './util.js';
@@ -11,9 +12,19 @@ const view = $('#view');
 const TOP5 = ['no', 'cost', 'spouse', 'rent', 'credit'];
 let pending = null; // a text the rep just opened in Messages
 
-/* ---------- content, with the rep's own edits ---------- */
-const openers = () => { const e = load().edits.openers; return OPENERS.map(o => ({ ...o, ...(e[o.id] || {}) })); };
-const answers = () => { const e = load().edits.answers; return ANSWERS.map(a => ({ ...a, ...(e[a.id] || {}) })); };
+/* ---------- content, with the rep's own edits, in English or Spanish ---------- */
+const clang = () => load().ui.clang || (/^es\b/i.test(navigator.language || '') ? 'es' : 'en');
+const editKey = kind => (clang() === 'es' ? `${kind}Es` : kind);
+const openers = () => {
+  const es = clang() === 'es', e = load().edits[editKey('openers')] || {};
+  return OPENERS.map(o => ({ ...o, ...(es ? OPENERS_ES[o.id] : {}), ...(e[o.id] || {}) }));
+};
+const answers = () => {
+  const es = clang() === 'es', e = load().edits[editKey('answers')] || {};
+  return ANSWERS.map(a => ({ ...a, ...(es ? ANSWERS_ES[a.id] : {}), ...(e[a.id] || {}) }));
+};
+const baseOpener = id => ({ ...OPENERS.find(x => x.id === id), ...(clang() === 'es' ? OPENERS_ES[id] : {}) });
+const baseAnswer = id => ({ ...ANSWERS.find(x => x.id === id), ...(clang() === 'es' ? ANSWERS_ES[id] : {}) });
 
 // One opener a day, picked for her, so the week view can compare them.
 function openerFor(date = new Date()) {
@@ -65,6 +76,35 @@ function sampleNotice() {
     : '';
 }
 
+/* ---------- local facts from California's public solar records ---------- */
+let zipData = null;
+const loadZips = () => zipData || (zipData = fetch('../assets/data/sce-zips.json').then(r => r.json()).catch(() => null));
+function zipFacts(data, zip, keywords) {
+  const z = data && data.zips[zip];
+  if (!z) return null;
+  const out = { total: z[0], year: z[1], mine: null, mineYear: null };
+  const words = String(keywords || '').toLowerCase().split(',').map(w => w.trim()).filter(Boolean);
+  if (words.length) {
+    const hit = new Set(data.companies.map((c, i) => [c.toLowerCase(), i]).filter(([c]) => words.some(w => c.includes(w))).map(([, i]) => i));
+    out.mine = 0; out.mineYear = 0;
+    for (const [si, c, c12] of z[2]) if (data.sigs[si].some(i => hit.has(i))) { out.mine += c; out.mineYear += c12; }
+  }
+  return out;
+}
+const storeZip = d => { const i = d.settings.stores.indexOf(d.ui.where); return ((d.settings.storeZips || '').split(',')[i] || '').trim(); };
+
+async function renderLocalFact() {
+  const el = $('#localfact');
+  if (!el) return;
+  const d = load();
+  const zip = storeZip(d);
+  if (!/^\d{5}$/.test(zip)) { el.innerHTML = `<button class="linkbtn small" type="button" data-act="set-zip">Add ${esc(d.ui.where)}'s ZIP for a local fact</button>`; return; }
+  const data = await loadZips();
+  const f = zipFacts(data, zip, d.settings.companyWords);
+  if (!f) { el.textContent = `No public solar counts for ${zip} (city-power areas aren't in the state data).`; return; }
+  el.innerHTML = `Near ${esc(d.ui.where)}: <b>${f.total.toLocaleString()}</b> homes in ${zip} have solar, <b>${f.year.toLocaleString()}</b> in the last 12 months.${f.mine != null ? ` Your company: <b>${f.mineYear.toLocaleString()}</b> of those.` : ''}`;
+}
+
 /* ---------- Floor: three big buttons ---------- */
 const QR_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm8-2h3v3h-3zm3 3h2v2h-2zm2-3h3v3h-3zm-5 5h3v3h-3zm5 0h3v3h-3z"/></svg>';
 
@@ -75,6 +115,7 @@ function renderFloor() {
   view.innerHTML = `
     ${sampleNotice()}
     <p class="opener-mini"><span>Today's opener</span>“${esc(o.line)}”</p>
+    <p class="localfact" id="localfact"></p>
     <div class="floor">
       <button class="big code" type="button" data-act="code">${QR_ICON}<span>My code</span></button>
       <button class="big maybe" type="button" data-act="maybe">${ICONS.plus}<span>Maybe</span></button>
@@ -82,6 +123,28 @@ function renderFloor() {
       <button class="nobook" type="button" data-act="nobook">Didn't book</button>
     </div>
     <p class="today">Today: <b>${f.chats}</b> chats, <b>${f.booked}</b> booked, <b>${f.maybes}</b> maybes${f.chats ? ` <button class="linkbtn small" type="button" data-act="undo">Undo last</button>` : ''}</p>`;
+  renderLocalFact();
+}
+
+function setZip() {
+  const d = load();
+  const s = sheet({ title: `${d.ui.where}'s ZIP`, body: `<form class="form"><label class="field"><span>The store's ZIP code</span><input class="input" id="zipset" inputmode="numeric" maxlength="5" value="${esc(storeZip(d))}" autofocus></label>
+    <label class="field"><span>Your company, as it appears in state records (optional)</span><input class="input" id="cowords" value="${esc(d.settings.companyWords || '')}" placeholder="Company name or brands, separated by commas"></label>
+    <p class="small muted">Counts come from California's public interconnection data (Edison area). Only counts, never addresses.</p>
+    <button class="btn wide" type="submit">Save</button></form>` });
+  s.body.querySelector('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const z = $('#zipset').value.trim();
+    update(x => {
+      const zips = (x.settings.storeZips || '').split(',').map(v => v.trim());
+      const i = x.settings.stores.indexOf(x.ui.where);
+      while (zips.length < x.settings.stores.length) zips.push('');
+      zips[i] = z;
+      x.settings.storeZips = zips.join(', ');
+      x.settings.companyWords = $('#cowords').value.trim();
+    });
+    s.close(); route();
+  });
 }
 
 function logChat(r) {
@@ -107,12 +170,15 @@ function noBook() {
 }
 
 function stamp() {
+  const burst = document.createElement('div');
+  burst.className = 'burst';
+  burst.setAttribute('aria-hidden', 'true');
   const el = document.createElement('div');
   el.className = 'stamp';
   el.textContent = 'Booked!';
   el.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1100);
+  document.body.append(burst, el);
+  setTimeout(() => { el.remove(); burst.remove(); }, 1200);
 }
 
 function undoTap(t) {
@@ -479,16 +545,14 @@ function renderPractice() {
   const rest = all.filter(a => !TOP5.includes(a.id));
   view.innerHTML = `
     <header class="vhead"><h1>Practice</h1><p>For before your shift or a break. Read what they say, answer out loud, then flip the card.</p></header>
-    <section class="rules" aria-labelledby="rules-h"><h2 id="rules-h">Floor rules</h2>
-      <ul><li>Help first, then say who you're with: “I'm with ${fillNames('[company]')}. I don't work for ${fillNames('[store]')}.”</li>
-      <li>Never at the registers or in a checkout line.</li>
-      <li>Take no for an answer. No following, no blocking an exit.</li>
-      <li>Don't open by asking how much their bill is.</li></ul></section>
+    <div class="seg" role="group" aria-label="Language for openers and answers"><button type="button" data-clang="en" aria-pressed="${clang() === 'en'}">English</button><button type="button" data-clang="es" aria-pressed="${clang() === 'es'}">Español</button></div>
+    <section class="rules" aria-labelledby="rules-h"><h2 id="rules-h">${clang() === 'es' ? 'Reglas del piso' : 'Floor rules'}</h2>
+      <ul>${RULES[clang()].map(r => `<li>${fillNames(r)}</li>`).join('')}</ul></section>
     <section class="section" aria-labelledby="top-h"><h2 class="section-title" id="top-h">The five you'll hear most</h2>
       <div class="flashes">${top.map((a, i) => `
         <button class="flash" type="button" data-flip="${a.id}" aria-pressed="false">
-          <span class="flash-front"><small>${i + 1} of 5. They say</small><b>“${esc(a.label)}”</b><em>Tap to see a good answer</em></span>
-          <span class="flash-back"><small>${i + 1} of 5: “${esc(a.label)}”. You say</small><span class="flash-say">${fillNames(a.say)}</span>${a.next ? `<em>${fillNames(a.next)}</em>` : ''}</span>
+          <span class="flash-front"><small>${i + 1} of 5. ${clang() === 'es' ? 'Le dicen' : 'They say'}</small><b>“${esc(a.label)}”</b><em>${clang() === 'es' ? 'Toque para ver una buena respuesta' : 'Tap to see a good answer'}</em></span>
+          <span class="flash-back"><small>${i + 1} of 5: “${esc(a.label)}”. ${clang() === 'es' ? 'Usted dice' : 'You say'}</small><span class="flash-say">${fillNames(a.say)}</span>${a.next ? `<em>${fillNames(a.next)}</em>` : ''}</span>
         </button>`).join('')}</div>
     </section>
     <details class="section acc"><summary class="section-title">More answers (${rest.length})</summary>
@@ -497,7 +561,7 @@ function renderPractice() {
     <section class="card" aria-labelledby="gpt-h">
       <h2 id="gpt-h">Practice out loud with ChatGPT</h2>
       <p>Copy this, paste it into ChatGPT, then tap the voice button and talk. It plays a busy shopper, throws these objections at you and coaches you after each round. Free on your own account.</p>
-      <div class="prompt" id="prompt">${esc(PRACTICE_PROMPT(openers(), all))}</div>
+      <div class="prompt" id="prompt">${esc((clang() === 'es' ? PRACTICE_PROMPT_ES : PRACTICE_PROMPT)(openers(), all))}</div>
       <div class="btnrow"><button class="btn small" type="button" data-act="copy-prompt">${ICONS.copy} Copy prompt</button><a class="btn small ghost" href="https://chatgpt.com/" target="_blank" rel="noopener">Open ChatGPT</a></div>
     </section>
     <details class="section acc"><summary class="section-title">Openers (one a day, picked for you)</summary>
@@ -508,7 +572,8 @@ function renderPractice() {
 
 function editAnswer(id) {
   const a = answers().find(x => x.id === id);
-  const base = ANSWERS.find(x => x.id === id);
+  const base = baseAnswer(id);
+  const store = editKey('answers');
   const s = sheet({
     title: 'Edit answer',
     body: `<form class="form">
@@ -521,15 +586,16 @@ function editAnswer(id) {
   });
   s.body.querySelector('form').addEventListener('submit', e => {
     e.preventDefault();
-    update(d => { d.edits.answers[id] = { label: $('#ea-label').value.trim() || base.label, say: $('#ea-say').value.trim() || base.say, next: $('#ea-next').value.trim() }; });
+    update(d => { d.edits[store] = d.edits[store] || {}; d.edits[store][id] = { label: $('#ea-label').value.trim() || base.label, say: $('#ea-say').value.trim() || base.say, next: $('#ea-next').value.trim() }; });
     s.close(); toast('Saved on this phone'); route();
   });
-  s.body.querySelector('[data-act="reset"]').addEventListener('click', () => { update(d => { delete d.edits.answers[id]; }); s.close(); toast('Back to the default'); route(); });
+  s.body.querySelector('[data-act="reset"]').addEventListener('click', () => { update(d => { if (d.edits[store]) delete d.edits[store][id]; }); s.close(); toast('Back to the default'); route(); });
 }
 
 function editOpener(id) {
   const o = openers().find(x => x.id === id);
-  const base = OPENERS.find(x => x.id === id);
+  const base = baseOpener(id);
+  const store = editKey('openers');
   const s = sheet({
     title: 'Edit opener',
     body: `<form class="form">
@@ -540,10 +606,10 @@ function editOpener(id) {
   });
   s.body.querySelector('form').addEventListener('submit', e => {
     e.preventDefault();
-    update(x => { x.edits.openers[id] = { line: $('#eo-line').value.trim() || base.line, why: $('#eo-why').value.trim() }; });
+    update(x => { x.edits[store] = x.edits[store] || {}; x.edits[store][id] = { line: $('#eo-line').value.trim() || base.line, why: $('#eo-why').value.trim() }; });
     s.close(); toast('Saved on this phone'); route();
   });
-  s.body.querySelector('[data-act="reset"]').addEventListener('click', () => { update(x => { delete x.edits.openers[id]; }); s.close(); toast('Back to the default'); route(); });
+  s.body.querySelector('[data-act="reset"]').addEventListener('click', () => { update(x => { if (x.edits[store]) delete x.edits[store][id]; }); s.close(); toast('Back to the default'); route(); });
 }
 
 /* ---------- Week ---------- */
@@ -553,15 +619,14 @@ function pickFrom(title, options, current, onPick) {
   s.body.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; onPick(b.dataset.v); s.close(); });
 }
 
-function renderWeek() {
+function weekStats(offset = 0) {
   const d = load();
-  const end = Date.now() - weekOffset * 7 * 86400000;
+  const end = Date.now() - offset * 7 * 86400000;
   const start = end - 7 * 86400000;
   const taps = d.taps.filter(t => t.t >= start && t.t < end);
   const f = tally(taps);
-  const ops = openers();
   const rate = x => (x.chats ? x.booked / x.chats : 0);
-  const byOpener = ops.map((o, i) => ({ o, i, ...tally(taps.filter(t => t.o === o.id)) })).filter(x => x.chats);
+  const byOpener = openers().map((o, i) => ({ o, i, ...tally(taps.filter(t => t.o === o.id)) })).filter(x => x.chats);
   const enough = byOpener.filter(x => x.chats >= 6);
   const bestO = [...(enough.length ? enough : byOpener)].sort((a, b) => rate(b) - rate(a) || b.booked - a.booked)[0];
   const blocks = [[9, 11], [11, 13], [13, 15], [15, 17], [17, 19], [19, 21]];
@@ -570,8 +635,88 @@ function renderWeek() {
   let bestCell = null;
   grid.forEach((row, di) => row.forEach((c, bi) => { if (c.chats >= 3 && (!bestCell || rate(c) > rate(bestCell.c) || (rate(c) === rate(bestCell.c) && c.booked > bestCell.c.booked))) bestCell = { di, bi, c }; }));
   const spots = [...new Set(taps.map(t => t.spot))].map(spot => ({ spot, ...tally(taps.filter(t => t.spot === spot)) })).sort((a, b) => rate(b) - rate(a));
-  const bestS = spots.find(s => s.chats >= 6) || spots[0];
+  const bestS = spots.find(x => x.chats >= 6) || spots[0];
   const hl = h => `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`;
+  const fmt = t => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return { start, end, range: `${fmt(start + 86400000)} to ${fmt(end)}`, taps, f, rate, byOpener, bestO, blocks, days, grid, bestCell, spots, bestS, hl,
+    bestTime: bestCell ? `${days[bestCell.di]} ${hl(blocks[bestCell.bi][0])} to ${hl(blocks[bestCell.bi][1])}` : null };
+}
+
+// A two-week pilot: what she entered from her records for the two weeks before,
+// against what the coach counted in the two weeks since the start date.
+function pilotStats() {
+  const d = load();
+  const p = d.settings.pilot;
+  if (!p) return null;
+  const start = new Date(`${p.start}T00:00`).getTime();
+  const end = Math.min(Date.now(), start + 14 * 86400000);
+  const inW = t => t >= start && t < end;
+  const taps = d.taps.filter(t => inW(t.t));
+  const shifts = new Set(taps.map(t => `${new Date(t.t).toDateString()}|${t.where}`)).size;
+  const booth = taps.filter(t => t.r === 'book').length;
+  const page = d.bookings.filter(b => inW(b.created) && b.src && !/^booth$/i.test(b.src)).length;
+  const maybe = d.maybes.filter(m => m.booked && inW(m.booked)).length;
+  const done = d.bookings.filter(b => b.outcome && inW(b.outcomeAt || b.created));
+  const showed = done.filter(b => b.outcome === 'showed').length, noshow = done.filter(b => b.outcome === 'noshow').length;
+  const b = p.before || {};
+  return {
+    p, day: Math.min(14, Math.max(1, Math.ceil((Date.now() - start) / 86400000))),
+    with: { perShift: shifts ? (booth + page + maybe) / shifts : null, page, maybe, show: showed + noshow ? showed / (showed + noshow) : null, shifts, booked: booth + page + maybe },
+    before: { perShift: b.shifts ? b.booked / b.shifts : null, page: 0, maybe: 0, show: (b.showed || 0) + (b.noshow || 0) ? b.showed / (b.showed + b.noshow) : null },
+  };
+}
+
+function pilotSetup() {
+  const d = load();
+  const p = d.settings.pilot || { start: new Date().toISOString().slice(0, 10), before: {} };
+  const b = p.before || {};
+  const s = sheet({ title: 'Two-week pilot', body: `<form class="form">
+    <p class="small muted">Pick the day you start using the coach. Then enter your two weeks before that, from your own records or the tablet.</p>
+    <label class="field"><span>Start date</span><input class="input" id="pl-start" type="date" value="${esc(p.start)}"></label>
+    <div class="row2"><label class="field"><span>Shifts worked, 2 weeks before</span><input class="input" id="pl-shifts" inputmode="numeric" value="${esc(b.shifts ?? '')}"></label>
+    <label class="field"><span>Appointments booked</span><input class="input" id="pl-booked" inputmode="numeric" value="${esc(b.booked ?? '')}"></label></div>
+    <div class="row2"><label class="field"><span>Of those, happened</span><input class="input" id="pl-showed" inputmode="numeric" value="${esc(b.showed ?? '')}"></label>
+    <label class="field"><span>No-shows</span><input class="input" id="pl-noshow" inputmode="numeric" value="${esc(b.noshow ?? '')}"></label></div>
+    <button class="btn wide" type="submit">Save</button>
+    ${d.settings.pilot ? '<button class="btn ghost wide" type="button" data-act="pilot-clear">Remove the pilot</button>' : ''}</form>` });
+  const n = id => Math.max(0, parseInt($(id).value, 10) || 0);
+  s.body.querySelector('form').addEventListener('submit', e => {
+    e.preventDefault();
+    update(x => { x.settings.pilot = { start: $('#pl-start').value || new Date().toISOString().slice(0, 10), before: { shifts: n('#pl-shifts'), booked: n('#pl-booked'), showed: n('#pl-showed'), noshow: n('#pl-noshow') } }; });
+    s.close(); toast('Pilot saved on this phone'); renderWeek();
+  });
+  const clear = s.body.querySelector('[data-act="pilot-clear"]');
+  if (clear) clear.addEventListener('click', () => { update(x => { delete x.settings.pilot; }); s.close(); renderWeek(); });
+}
+
+function pilotHTML() {
+  const ps = pilotStats();
+  if (!ps) {
+    return `<section class="card pilot"><h2>Run a two-week pilot</h2>
+      <p>Compare your two weeks before the coach with your first two weeks using it: bookings per shift, bookings from your page after hours, maybes that turned into bookings, and appointments that happened. Real numbers, from your own taps.</p>
+      <button class="btn small" type="button" data-act="pilot-setup">Set up the pilot</button></section>`;
+  }
+  const num = (v, k) => (v == null ? '–' : k === 'pct' ? `${Math.round(v * 100)}%` : k === 'dec' ? v.toFixed(1) : String(v));
+  const arrow = (a, b) => (a == null || b == null || a === b ? '' : b > a ? ' <span class="up" aria-label="up">▲</span>' : ' <span class="down" aria-label="down">▼</span>');
+  const rows = [
+    ['Bookings per shift', ps.before.perShift, ps.with.perShift, 'dec'],
+    ['Bookings from your page, when you weren\'t there', ps.before.page, ps.with.page, ''],
+    ['Maybes that turned into bookings', ps.before.maybe, ps.with.maybe, ''],
+    ['Appointments that happened', ps.before.show, ps.with.show, 'pct'],
+  ];
+  return `<section class="card pilot"><h2>Pilot: two weeks before vs with the coach</h2>
+    <p>Day ${ps.day} of 14, started ${new Date(`${ps.p.start}T12:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. ${ps.with.booked} bookings in ${ps.with.shifts} shifts so far.</p>
+    <div class="tablewrap"><table class="cmp"><thead><tr><th scope="col"></th><th scope="col">Before</th><th scope="col">With</th></tr></thead><tbody>
+    ${rows.map(([label, a, b, k]) => `<tr><th scope="row">${label}</th><td>${num(a, k)}</td><td>${num(b, k)}${arrow(a, b)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="small muted">Before: what you entered from your records. With: counted from your Booked, Didn't book, "They booked" and "It happened" taps.</p>
+    <button class="linkbtn small" type="button" data-act="pilot-setup">Change the pilot</button></section>`;
+}
+
+function renderWeek() {
+  const d = load();
+  const w = weekStats(weekOffset);
+  const { f, rate, byOpener, bestO, blocks, days, grid, bestCell, spots, bestS, hl } = w;
   const seq = r => (r >= 0.3 ? 'var(--seq-4)' : r >= 0.2 ? 'var(--seq-3)' : r >= 0.1 ? 'var(--seq-2)' : r > 0 ? 'var(--seq-1)' : 'var(--seq-0)');
   const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
   const ink = r => (r >= 0.2 ? (dark ? '#0d1533' : '#fff') : 'var(--ink)');
@@ -579,20 +724,21 @@ function renderWeek() {
     <header class="vhead"><h1>Your week</h1><p>From your Booked and Didn't book taps. Nothing else is tracked.</p></header>
     <div class="workbar"><span>Working at</span>
       <button class="chip on" type="button" data-act="where">${esc(d.ui.where)}</button>
-      <button class="chip" type="button" data-act="spot">${esc(d.ui.spot)}</button></div>
+      <button class="chip" type="button" data-act="spot">${esc(d.ui.spot)}</button>
+      <button class="linkbtn small" type="button" data-act="set-zip">${storeZip(d) ? `ZIP ${esc(storeZip(d))}` : 'Add store ZIP'}</button></div>
     <div class="seg" role="group" aria-label="Which week"><button type="button" data-week="0" aria-pressed="${weekOffset === 0}">Last 7 days</button><button type="button" data-week="1" aria-pressed="${weekOffset === 1}">7 days before</button></div>
     ${f.chats ? `
-    <div class="tiles">
-      <div class="tile"><b>${f.chats}</b><span>Chats</span></div>
-      <div class="tile"><b>${f.booked}</b><span>Booked</span></div>
-      <div class="tile"><b>${f.maybes}</b><span>Maybes</span></div>
-      <div class="tile"><b>${pct(f.booked, f.chats)}%</b><span>Booked rate</span></div>
-    </div>
-    ${f.chats < 12 ? `<div class="notice"><span>Keep tapping. After about a dozen chats you'll see which opener, time and spot work best.</span></div>` : `<section class="best" aria-label="What's working">
-      ${bestO ? `<div class="best-row"><span>Best opener</span><b>“${esc(bestO.o.line)}”</b><small>${bestO.booked} booked from ${bestO.chats} chats${bestO.chats < 6 ? '. Small sample, keep going' : ''}</small></div>` : ''}
-      ${bestCell ? `<div class="best-row"><span>Best time</span><b>${days[bestCell.di]} ${hl(blocks[bestCell.bi][0])} to ${hl(blocks[bestCell.bi][1])}</b><small>${bestCell.c.booked} booked from ${bestCell.c.chats} chats</small></div>` : ''}
-      ${bestS ? `<div class="best-row"><span>Best spot</span><b>${esc(bestS.spot)}</b><small>${pct(bestS.booked, bestS.chats)}% of chats there booked</small></div>` : ''}
-    </section>`}
+    <section class="recap" aria-label="Weekly recap">
+      <span class="recap-k">${esc(w.range)}</span>
+      <div class="recap-top"><b class="recap-big">${f.booked}</b><span class="recap-of">${f.booked === 1 ? 'booking' : 'bookings'}<br>from ${f.chats} chats, ${f.maybes} maybes</span></div>
+      ${f.chats < 12 ? '<p class="recap-note">Keep tapping. After about a dozen chats you\'ll see your best opener, time and spot.</p>' : `
+      <dl class="recap-rows">
+        ${bestO ? `<div><dt>Best opener</dt><dd>“${esc(bestO.o.line)}”</dd></div>` : ''}
+        ${w.bestTime ? `<div><dt>Best time</dt><dd>${w.bestTime}</dd></div>` : ''}
+        ${bestS ? `<div><dt>Best spot</dt><dd>${esc(bestS.spot)}</dd></div>` : ''}
+      </dl>`}
+      <div class="btnrow"><button class="btn small lemon" type="button" data-act="recap-png">Save as image</button><button class="btn small ghost-light" type="button" data-act="recap-csv">Save numbers (CSV)</button></div>
+    </section>
     <section class="section"><h2 class="section-title">Openers, one a day: chats that booked</h2>
       <div class="bars">${[...byOpener].sort((a, b) => rate(b) - rate(a)).map(x => `
         <div class="bar-row"><div class="bar-label"><span>${esc(x.o.line)}</span><span>${pct(x.booked, x.chats)}%</span></div>
@@ -610,10 +756,78 @@ function renderWeek() {
       <div class="legend"><span>Fewer</span><i style="background:var(--seq-1)"></i><i style="background:var(--seq-2)"></i><i style="background:var(--seq-3)"></i><i style="background:var(--seq-4)"></i><span>More of the chats booked. Numbers are bookings.</span></div>
     </section>
     <section class="section"><h2 class="section-title">Spots in the store</h2>
-      <div class="bars">${spots.map(s => `<div class="bar-row"><div class="bar-label"><span>${esc(s.spot)}</span><span>${pct(s.booked, s.chats)}%</span></div>
-        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, Math.min(100, pct(s.booked, s.chats) * 2.5))}%"></div></div>
-        <div class="bar-label small"><span class="muted">${s.chats} chats, ${s.booked} booked</span><span></span></div></div>`).join('')}</div>
-    </section>` : `<div class="empty"><h3>Nothing yet this week</h3><p class="muted">After each chat, tap Booked or Didn't book on the Floor screen. By the weekend you'll see which opener, time and spot work best.</p></div>`}`;
+      <div class="bars">${spots.map(x => `<div class="bar-row"><div class="bar-label"><span>${esc(x.spot)}</span><span>${pct(x.booked, x.chats)}%</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, Math.min(100, pct(x.booked, x.chats) * 2.5))}%"></div></div>
+        <div class="bar-label small"><span class="muted">${x.chats} chats, ${x.booked} booked</span><span></span></div></div>`).join('')}</div>
+    </section>` : `<div class="empty"><h3>Nothing yet this week</h3><p class="muted">After each chat, tap Booked or Didn't book on the Floor screen. By the weekend you'll see which opener, time and spot work best.</p></div>`}
+    ${pilotHTML()}`;
+}
+
+/* ---------- export: a recap image and a numbers file, no customer names ---------- */
+async function exportImage() {
+  const w = weekStats(weekOffset);
+  const ps = pilotStats();
+  try { await Promise.all([document.fonts.load('400 120px "Alfa Slab One"'), document.fonts.load('700 40px "Atkinson Hyperlegible Next"'), document.fonts.load('400 40px "Atkinson Hyperlegible Next"')]); } catch (e) { /* fall back to system fonts */ }
+  const W = 1080, H = 1350;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2445b3'; g.fillRect(0, 0, W, H);
+  g.save(); g.translate(W - 40, 40);
+  for (let i = 0; i < 24; i++) { g.rotate(Math.PI / 12); g.fillStyle = i % 2 ? 'rgba(244,204,42,0.95)' : 'rgba(244,204,42,0)'; g.beginPath(); g.moveTo(0, 0); g.lineTo(560, -60); g.lineTo(560, 60); g.closePath(); g.fill(); }
+  g.fillStyle = '#f4cc2a'; g.beginPath(); g.arc(0, 0, 110, 0, Math.PI * 2); g.fill(); g.restore();
+  const slab = px => `400 ${px}px "Alfa Slab One", Rockwell, Georgia, serif`;
+  const body = (wt, px) => `${wt} ${px}px "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, sans-serif`;
+  g.fillStyle = '#ffffff'; g.font = body(700, 38); g.fillText(`My week at the solar booth, ${w.range}`, 80, 140);
+  g.fillStyle = '#f4cc2a'; g.font = slab(330); g.fillText(String(w.f.booked), 70, 470);
+  g.fillStyle = '#ffffff'; g.font = slab(64); g.fillText(w.f.booked === 1 ? 'booking' : 'bookings', 80, 560);
+  g.font = body(400, 38); g.fillText(`from ${w.f.chats} chats and ${w.f.maybes} maybes (${pct(w.f.booked, w.f.chats)}% booked)`, 80, 625);
+  let y = 730;
+  const row = (k, v) => {
+    g.fillStyle = 'rgba(255,255,255,0.75)'; g.font = body(700, 30); g.fillText(k, 80, y);
+    g.fillStyle = '#ffffff'; g.font = slab(46);
+    const words = v.split(' '); let line = ''; y += 58;
+    for (const word of words) { const test = line ? `${line} ${word}` : word; if (g.measureText(test).width > W - 160) { g.fillText(line, 80, y); y += 56; line = word; } else line = test; }
+    g.fillText(line, 80, y); y += 70;
+  };
+  if (w.bestO) row('Best opener', `“${w.bestO.o.line}”`);
+  if (w.bestTime) row('Best time', w.bestTime);
+  if (w.bestS) row('Best spot', w.bestS.spot);
+  if (ps && ps.before.perShift != null && ps.with.perShift != null) row('Bookings per shift, before vs with the coach', `${ps.before.perShift.toFixed(1)} → ${ps.with.perShift.toFixed(1)}`);
+  g.fillStyle = 'rgba(255,255,255,0.7)'; g.font = body(400, 26); g.fillText('Counted on my own phone from my own taps. No customer details.', 80, H - 70);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  const file = new File([blob], `my-week-${new Date().toISOString().slice(0, 10)}.png`, { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'My week' }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast('Image saved');
+}
+
+function exportCSV() {
+  const d = load();
+  const rows = [['date', 'store', 'chats', 'booked', 'maybes']];
+  const byDay = new Map();
+  for (const t of d.taps) {
+    if (t.t < Date.now() - 28 * 86400000) continue;
+    const k = `${new Date(t.t).toISOString().slice(0, 10)}|${t.where}`;
+    const x = byDay.get(k) || { chats: 0, booked: 0, maybes: 0 };
+    x.chats++; if (t.r === 'book') x.booked++; if (t.r === 'maybe') x.maybes++;
+    byDay.set(k, x);
+  }
+  [...byDay.entries()].sort().forEach(([k, x]) => { const [date, store] = k.split('|'); rows.push([date, store, x.chats, x.booked, x.maybes]); });
+  const ps = pilotStats();
+  if (ps) {
+    rows.push([], ['pilot', 'before', 'with']);
+    rows.push(['bookings per shift', ps.before.perShift == null ? '' : ps.before.perShift.toFixed(2), ps.with.perShift == null ? '' : ps.with.perShift.toFixed(2)]);
+    rows.push(['bookings from her page (when she was not there)', ps.before.page, ps.with.page]);
+    rows.push(['maybes turned into bookings', ps.before.maybe, ps.with.maybe]);
+    rows.push(['share of appointments that happened', ps.before.show == null ? '' : Math.round(ps.before.show * 100) + '%', ps.with.show == null ? '' : Math.round(ps.with.show * 100) + '%']);
+  }
+  const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  download(`my-numbers-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv');
+  toast('Numbers saved. No customer names or numbers in the file.');
 }
 
 /* ---------- People (from Tonight and More) ---------- */
@@ -633,7 +847,7 @@ function renderPeople() {
       return `<article class="person"><div class="person-top"><h3>${esc(m.first)}</h3><span class="meta">${fmtPhone(m.phone)}</span></div>
         <div class="dots" aria-label="${plan.filter(p => m.sent && m.sent[p.step]).length} of ${plan.length} texts sent">${dots}</div>
         <p class="meta">${esc(status)}. OK to text given ${fmtDay(m.consentAt)}.</p>
-        <div class="person-actions">${!m.stopped ? `<button class="btn small ghost" type="button" data-stopm="${m.id}">They said stop</button>` : ''}<button class="btn small ghost" type="button" data-delm="${m.id}">Delete</button></div></article>`;
+        <div class="person-actions">${m.booked ? `<span class="tag">Booked ${fmtDay(m.booked)}</span>` : `<button class="btn small" type="button" data-bookedm="${m.id}">They booked</button>`}${!m.stopped && !m.booked ? `<button class="btn small ghost" type="button" data-stopm="${m.id}">They said stop</button>` : ''}<button class="btn small ghost" type="button" data-delm="${m.id}">Delete</button></div></article>`;
     }).join('')}</div>` : `<div class="empty"><h3>No maybes yet</h3><p class="muted">Tap Maybe on the Floor screen when an owner says "not today".</p></div>`;
   } else {
     body = bookings.length ? `<div class="list">${bookings.map(b => {
@@ -641,8 +855,9 @@ function renderPeople() {
       const past = b.when && new Date(b.when) < new Date();
       const whenText = b.when ? `${past ? 'Was ' : ''}${fmtDay(b.when)}, ${fmtTime(b.when)}` : `Time not set${b.prefs && b.prefs.length ? `: ${prefsText(b.prefs).toLowerCase()}` : ''}`;
       const steps = [['now', 'Texted'], ['before', 'Day-before confirm'], ['neighbor', 'Neighbor link']].map(([k, l]) => `<span style="${s[k] > 0 ? '' : 'opacity:.45'}">${s[k] > 0 ? '✓ ' : ''}${l}</span>`).join('');
+      const outcome = past ? (b.outcome ? `<span class="tag">${b.outcome === 'showed' ? 'Happened' : 'No-show'}</span>` : `<button class="btn small" type="button" data-outcome="showed" data-bid="${b.id}">It happened</button><button class="btn small ghost" type="button" data-outcome="noshow" data-bid="${b.id}">No-show</button>`) : '';
       return `<article class="person"><div class="person-top"><h3>${esc(b.first)} ${esc(b.last || '')}</h3><span class="meta">${esc(whenText)}</span></div>
-        <div class="minitags">${steps}</div>
+        <div class="minitags">${steps}</div>${outcome ? `<div class="person-actions">${outcome}</div>` : ''}
         <div class="person-actions"><button class="btn small ghost" type="button" data-book="${b.id}">${b.when ? 'Details for the tablet' : 'Details and set the time'}</button></div></article>`;
     }).join('')}</div>` : `<div class="empty"><h3>No bookings yet</h3><p class="muted">Tap Booked on the Floor screen, then Add for reminders.</p></div>`;
   }
@@ -762,6 +977,8 @@ function intro(force = false) {
 
 /* ---------- one click handler for the whole view ---------- */
 view.addEventListener('click', async e => {
+  const cl = e.target.closest('[data-clang]');
+  if (cl) { update(d => { d.ui.clang = cl.dataset.clang; }); return renderPractice(); }
   const flip = e.target.closest('[data-flip]');
   if (flip) { flip.setAttribute('aria-pressed', String(flip.getAttribute('aria-pressed') !== 'true')); return; }
   const ea = e.target.closest('[data-edit-answer]');
@@ -772,6 +989,10 @@ view.addEventListener('click', async e => {
   if (pt) { peopleTab = pt.dataset.ptab; return renderPeople(); }
   const wk = e.target.closest('[data-week]');
   if (wk) { weekOffset = Number(wk.dataset.week); return renderWeek(); }
+  const bm = e.target.closest('[data-bookedm]');
+  if (bm) { update(d => { const x = d.maybes.find(y => y.id === bm.dataset.bookedm); if (x) { x.booked = Date.now(); x.stopped = x.stopped || Date.now(); } }); stamp(); toast('A maybe turned into a booking'); return renderPeople(); }
+  const oc = e.target.closest('[data-outcome]');
+  if (oc) { update(d => { const x = d.bookings.find(y => y.id === oc.dataset.bid); if (x) { x.outcome = oc.dataset.outcome; x.outcomeAt = Date.now(); } }); toast(oc.dataset.outcome === 'showed' ? 'Logged: it happened' : 'Logged: no-show'); return renderPeople(); }
   const sm = e.target.closest('[data-stopm]');
   if (sm) { update(d => { const x = d.maybes.find(y => y.id === sm.dataset.stopm); if (x) x.stopped = Date.now(); }); toast('No more texts to them'); return renderPeople(); }
   const dm = e.target.closest('[data-delm]');
@@ -784,6 +1005,10 @@ view.addEventListener('click', async e => {
   const d = load();
   switch (act.dataset.act) {
     case 'code': return showCode();
+    case 'set-zip': return setZip();
+    case 'recap-png': return exportImage();
+    case 'recap-csv': return exportCSV();
+    case 'pilot-setup': return pilotSetup();
     case 'maybe': return addMaybe();
     case 'booked': return booked();
     case 'nobook': return noBook();
@@ -807,7 +1032,7 @@ function boot() {
   const d = load();
   if (!d.taps.length && !d.maybes.length && !d.bookings.length && !d.firstRun) {
     const s = sampleData();
-    update(x => { x.taps = s.taps; x.maybes = s.maybes; x.bookings = s.bookings; x.samples = true; x.firstRun = Date.now(); });
+    update(x => { x.taps = s.taps; x.maybes = s.maybes; x.bookings = s.bookings; x.samples = true; x.firstRun = Date.now(); if (!x.settings.pilot) x.settings.pilot = s.pilot; });
   }
   keepData();
   route();

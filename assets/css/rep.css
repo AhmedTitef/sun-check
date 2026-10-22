@@ -258,3 +258,56 @@ body.clean .floor .big { min-height: clamp(96px, 17.5dvh, 156px); }
 .rules h2 { font: 400 1.3rem/1.1 var(--display); color: var(--lemon); }
 .rules ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; font-size: 0.9688rem; line-height: 1.4; }
 .rules .placeholder { background: var(--lemon); color: var(--on-lemon); }
+
+/* Local fact under the opener */
+.localfact { font-size: 0.875rem; color: var(--ink-2); margin-top: -0.35rem; line-height: 1.4; }
+.localfact b { color: var(--ink); }
+
+/* Booked: a sunburst behind the stamp */
+.burst {
+  position: fixed; z-index: 84; left: 50%; top: 40%; width: 320px; height: 320px; border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.2); pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, var(--lemon) 0deg 8deg, transparent 8deg 18deg);
+  mask: radial-gradient(circle, transparent 0 22%, #000 23% 62%, transparent 70%);
+  -webkit-mask: radial-gradient(circle, transparent 0 22%, #000 23% 62%, transparent 70%);
+  animation: burst 1.15s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) scale(0.2) rotate(0deg); opacity: 0; }
+  20% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.15) rotate(40deg); opacity: 0; }
+}
+
+/* Weekly recap card */
+.recap {
+  position: relative; overflow: hidden; isolation: isolate;
+  background: var(--label-bg); color: var(--label-ink); border-radius: var(--r-l);
+  padding: 1.1rem 1.15rem 1.15rem; display: grid; gap: 0.75rem; box-shadow: var(--shadow); transform: rotate(-0.6deg);
+}
+.recap::before {
+  content: ""; position: absolute; z-index: -1; width: 280px; height: 280px; right: -140px; top: -140px; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(244, 204, 42, 0.9) 0deg 7deg, transparent 7deg 17deg);
+  mask: radial-gradient(circle, transparent 0 38px, #000 39px); -webkit-mask: radial-gradient(circle, transparent 0 38px, #000 39px);
+}
+.recap::after { content: ""; position: absolute; z-index: -1; width: 76px; height: 76px; right: -38px; top: -38px; border-radius: 50%; background: #f4cc2a; }
+.recap-k { font-weight: 800; font-size: 0.875rem; opacity: 0.9; }
+.recap-top { display: flex; align-items: flex-end; gap: 0.8rem; }
+.recap-big { font: 400 4.6rem/0.85 var(--display); color: #f4cc2a; font-variant-numeric: tabular-nums; }
+.recap-of { font-weight: 700; font-size: 1rem; line-height: 1.3; padding-bottom: 0.25rem; }
+.recap-note { font-size: 0.9375rem; opacity: 0.9; }
+.recap-rows { display: grid; gap: 0.55rem; margin: 0; }
+.recap-rows div { display: grid; gap: 0.1rem; }
+.recap-rows dt { font-size: 0.8125rem; font-weight: 700; opacity: 0.85; }
+.recap-rows dd { margin: 0; font: 400 1.2rem/1.2 var(--display); }
+.btn.ghost-light { background: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
+
+/* Pilot comparison */
+.pilot .tablewrap { overflow-x: auto; }
+.cmp { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.9375rem; }
+.cmp th, .cmp td { text-align: left; padding: 0.55rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmp thead th { font-size: 0.8125rem; color: var(--ink-2); font-weight: 800; }
+.cmp tbody th { font-weight: 600; }
+.cmp td { font: 400 1.15rem/1.2 var(--display); white-space: nowrap; }
+.cmp .up { color: var(--grove); font-size: 0.8rem; }
+.cmp .down { color: var(--stamp); font-size: 0.8rem; }
