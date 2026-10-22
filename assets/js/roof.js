@@ -31,12 +31,23 @@ export async function suggest(text) {
 }
 
 export async function geocode(text, magicKey) {
-  const params = { SingleLine: text, f: 'json', maxLocations: '1', outFields: 'Addr_type,City,Postal,StAddr', countryCode: 'USA', location: IE };
+  const params = { SingleLine: text, f: 'json', maxLocations: '1', outFields: 'Addr_type,City,Postal,StAddr,X,Y,DisplayX,DisplayY', countryCode: 'USA', location: IE };
   if (magicKey) params.magicKey = magicKey;
   const j = await getJSON(`${ESRI_GEO}/findAddressCandidates`, params);
   const c = j.candidates && j.candidates[0];
   if (!c || c.score < 75) return null;
-  return { address: c.address.replace(/, USA$/, ''), lat: c.location.y, lon: c.location.x, exact: /PointAddress|Subaddress/.test(c.attributes.Addr_type || ''), city: c.attributes.City, zip: c.attributes.Postal, street: c.attributes.StAddr };
+  const a = c.attributes;
+  // X/Y is the point on the street in front of the address; DisplayX/Y is the rooftop.
+  const roofLat = a.DisplayY || c.location.y, roofLon = a.DisplayX || c.location.x;
+  const streetPt = a.X && a.Y && (Math.abs(a.X - roofLon) > 1e-6 || Math.abs(a.Y - roofLat) > 1e-6) ? { lat: a.Y, lon: a.X } : null;
+  return { address: c.address.replace(/, USA$/, ''), lat: roofLat, lon: roofLon, exact: /PointAddress|Subaddress/.test(a.Addr_type || ''), city: a.City, zip: a.Postal, street: a.StAddr, streetPt };
+}
+
+// Compass bearing from one point to another, in degrees (0 = north, clockwise).
+export function bearingTo(lat1, lon1, lat2, lon2) {
+  const kx = Math.cos((lat1 * Math.PI) / 180) * 111320;
+  const dx = (lon2 - lon1) * kx, dy = (lat2 - lat1) * 110540;
+  return { bearing: ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360, meters: Math.hypot(dx, dy) };
 }
 
 export async function reverse(lat, lon) {
@@ -109,18 +120,30 @@ function fallbackSun(lat, lon) {
   return { perKw: desert ? 1790 : 1690, sunHours: desert ? 6.5 : 6.2, source: 'typical' };
 }
 
-export async function sunAt(lat, lon) {
+// Yearly output per kW for a roof side facing `azimuth`, at a typical 20 degree pitch.
+// One PVWatts run per spot (facing south), then adjusted for the side's direction
+// with factors from PVWatts runs, so the free service's hourly limit isn't hit.
+const sunCache = new Map();
+async function southSun(lat, lon) {
   const key = `pv:${lat.toFixed(2)},${lon.toFixed(2)}`;
-  try { const hit = JSON.parse(localStorage.getItem(key) || 'null'); if (hit) return hit; } catch (e) { /* ignore */ }
-  try {
-    const j = await getJSON(PVWATTS, { api_key: 'DEMO_KEY', lat: lat.toFixed(4), lon: lon.toFixed(4), system_capacity: '1', azimuth: '180', tilt: '20', array_type: '1', module_type: '0', losses: '14' }, { timeout: 9000 });
-    if (!j.outputs || !j.outputs.ac_annual) throw new Error('no output');
-    const out = { perKw: Math.round(j.outputs.ac_annual), sunHours: Math.round(j.outputs.solrad_annual * 10) / 10, source: 'pvwatts' };
-    try { localStorage.setItem(key, JSON.stringify(out)); } catch (e) { /* ignore */ }
-    return out;
-  } catch (e) {
-    return fallbackSun(lat, lon);
-  }
+  if (sunCache.has(key)) return sunCache.get(key);
+  const job = (async () => {
+    try { const hit = JSON.parse(localStorage.getItem(key) || 'null'); if (hit && hit.perKw) return hit; } catch (e) { /* ignore */ }
+    try {
+      const j = await getJSON(PVWATTS, { api_key: 'DEMO_KEY', lat: lat.toFixed(4), lon: lon.toFixed(4), system_capacity: '1', azimuth: '180', tilt: '20', array_type: '1', module_type: '0', losses: '14' }, { timeout: 9000 });
+      if (!j.outputs || !j.outputs.ac_annual) throw new Error('no output');
+      const out = { perKw: Math.round(j.outputs.ac_annual), sunHours: Math.round(j.outputs.solrad_annual * 100) / 100, source: 'pvwatts' };
+      try { localStorage.setItem(key, JSON.stringify(out)); } catch (e) { /* ignore */ }
+      return out;
+    } catch (e) { return fallbackSun(lat, lon); }
+  })();
+  sunCache.set(key, job);
+  return job;
+}
+export async function sunAt(lat, lon, azimuth = 180) {
+  const base = await southSun(lat, lon);
+  const k = dirFactor(azimuth);
+  return { perKw: Math.round(base.perKw * k), sunHours: Math.round(base.sunHours * k * 10) / 10, azimuth: Math.round(azimuth), source: base.source };
 }
 
 /* ---------- map math (Web Mercator at zoom 19) ---------- */
@@ -168,25 +191,28 @@ export function layoutPanels(ringLL) {
   for (const side of [-1, 1]) {
     const nx = -side * Math.sin(ang), ny = side * Math.cos(ang);
     const bearing = ((Math.atan2(nx, -ny) * 180) / Math.PI + 360) % 360;
-    const cells = [];
+    const found = [];
+    const span = maxU - minU;
+    const n = Math.floor(span / pw);
+    const off = minU + (span - n * pw) / 2;
+    let outer = ridge;
     for (let r = 0; r < 40; r++) {
       const vA = side < 0 ? ridge - gap - pd * (r + 1) : ridge + gap + pd * r;
       const vB = vA + pd;
       if (side < 0 ? vA < minV : vB > maxV) break;
-      const span = maxU - minU;
-      const n = Math.floor(span / pw);
-      const off = minU + (span - n * pw) / 2;
-      const row = [];
       for (let c = 0; c < n; c++) {
         const uA = off + c * pw, uB = uA + pw;
         const corners = [[uA, vA], [uB, vA], [uB, vB], [uA, vB]];
-        if (corners.every(p => inRing(p, QR) && ringDist(p, QR) >= edge)) row.push({ corners, c });
+        if (corners.every(p => inRing(p, QR) && ringDist(p, QR) >= edge)) {
+          found.push({ r, c, u: (uA + uB) / 2, v: (vA + vB) / 2 });
+          outer = side < 0 ? Math.min(outer, vA) : Math.max(outer, vB);
+        }
       }
-      const mid = (n - 1) / 2;
-      row.sort((a, b) => Math.abs(a.c - mid) - Math.abs(b.c - mid));
-      row.forEach(cell => cells.push(cell.corners.map(back)));
     }
-    halves.push({ bearing, factor: dirFactor(bearing), cells });
+    const k = 0.9; // shrink each panel a little so the gaps between them show
+    const cells = found.map(f => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => back([f.u + (a * pw * k) / 2, f.v + (b * pd * k) / 2])));
+    found.forEach((f, i) => { f.cell = cells[i]; });
+    halves.push({ bearing, factor: dirFactor(bearing), cells, grid: found, mid: (ridge + outer) / 2 });
   }
   halves.sort((a, b) => b.factor - a.factor);
   const usable = halves.filter(h => h.factor >= 0.8);
@@ -201,12 +227,36 @@ export function layoutPanels(ringLL) {
 }
 
 // Pick n panels: sunniest slope first, then the other slope if it isn't north-facing.
-export function choosePanels(layout, n) {
+// With a back-only wish, use only the slope that faces most toward the back.
+export function slopesFor(layout, back = null) {
+  if (back == null) return layout.halves.filter(h => h.factor >= 0.8);
+  const off = h => Math.abs(((h.bearing - back + 540) % 360) - 180);
+  return [...layout.halves].sort((a, b) => off(a) - off(b)).slice(0, 1);
+}
+// Lay panels out the way installers do: a tidy block of full rows, centered on the
+// slope and wider along the ridge than it is deep.
+function blockOf(h, n) {
+  const rows = new Map();
+  for (const g of h.grid) { if (!rows.has(g.r)) rows.set(g.r, []); rows.get(g.r).push(g); }
+  const order = [...rows.keys()].sort((a, b) => Math.abs(rows.get(a)[0].v - h.mid) - Math.abs(rows.get(b)[0].v - h.mid));
+  const R = Math.max(1, Math.min(order.length, Math.round(Math.sqrt(n / 2.2))));
+  const C = Math.ceil(n / R);
+  const picked = [];
+  for (const r of order.slice(0, R).sort((a, b) => a - b)) {
+    const row = rows.get(r).sort((a, b) => a.c - b.c);
+    const mid = (row[0].c + row.at(-1).c) / 2;
+    row.sort((a, b) => Math.abs(a.c - mid) - Math.abs(b.c - mid));
+    picked.push(...row.slice(0, C));
+  }
+  // top up from the remaining rows if the block came up short
+  for (const r of order.slice(R)) { if (picked.length >= n) break; picked.push(...rows.get(r).slice(0, n - picked.length)); }
+  return picked.slice(0, n).sort((a, b) => a.r - b.r || a.c - b.c);
+}
+export function choosePanels(layout, n, back = null) {
   const out = [];
-  let i = 0;
-  for (const h of layout.halves) {
-    if (h.factor < 0.8) continue;
-    for (const cell of h.cells) { if (out.length >= n) break; out.push({ cell, factor: h.factor, i: i++ }); }
+  for (const h of slopesFor(layout, back)) {
+    if (out.length >= n) break;
+    for (const g of blockOf(h, Math.min(n - out.length, h.grid.length))) out.push({ cell: g.cell, factor: h.factor });
   }
   return out;
 }
@@ -227,9 +277,17 @@ function tile(x, y) {
   return tiles.get(k);
 }
 
+export async function tilesFor(view) {
+  const tx0 = Math.floor(view.x0 / 256), ty0 = Math.floor(view.y0 / 256);
+  const tx1 = Math.floor((view.x0 + view.w / view.k) / 256), ty1 = Math.floor((view.y0 + view.h / view.k) / 256);
+  const jobs = [];
+  for (let x = tx0; x <= tx1; x++) for (let y = ty0; y <= ty1; y++) jobs.push(tile(x, y).then(img => ({ img, x, y })));
+  return Promise.all(jobs);
+}
+
 export function makeView(canvas, center, extentPx) {
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  const k = extentPx ? Math.max(1.05, Math.min(2.6, (w * 0.56) / extentPx)) : 1.6;
+  const k = extentPx ? Math.max(1.05, Math.min(2.8, (w * 0.7) / extentPx)) : 1.6;
   return { w, h, k, x0: center[0] - w / (2 * k), y0: center[1] - h / (2 * k) };
 }
 
@@ -305,4 +363,94 @@ export async function drawRoof(canvas, view, { ring = null, panels = [], animate
     };
     requestAnimationFrame(frame);
   });
+}
+
+/* ---------- which way the front faces ---------- */
+// The street in the address, from OpenStreetMap (Overpass). Only coordinates and
+// the street name are sent; never anyone's name.
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const SUFFIX = { st: 'street', ave: 'avenue', av: 'avenue', dr: 'drive', rd: 'road', blvd: 'boulevard', ln: 'lane', ct: 'court', pl: 'place', cir: 'circle', pkwy: 'parkway', ter: 'terrace', trl: 'trail', hwy: 'highway', cv: 'cove', pt: 'point', sq: 'square', wy: 'way' };
+const DIRWORD = { n: 'north', s: 'south', e: 'east', w: 'west', ne: 'northeast', nw: 'northwest', se: 'southeast', sw: 'southwest' };
+export function normStreet(s) {
+  return String(s || '').toLowerCase().replace(/[.,#]/g, ' ').split(/\s+/).filter(Boolean)
+    .map(w => SUFFIX[w] || DIRWORD[w] || w).join(' ').trim();
+}
+
+async function streetsNear(lat, lon, radius = 90) {
+  const q = `[out:json][timeout:12];way(around:${radius},${lat.toFixed(6)},${lon.toFixed(6)})[highway][name];out tags geom;`;
+  for (const url of OVERPASS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 9000);
+      const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const j = await r.json();
+      return (j.elements || []).filter(e => e.geometry && e.geometry.length > 1 && e.tags && e.tags.name);
+    } catch (e) { /* try the next mirror */ }
+  }
+  return [];
+}
+
+// Bearing (0 = north, clockwise) from the house's middle to the nearest point on
+// the address's street. That's the way the front faces.
+export async function frontBearing(centerLat, centerLon, streetName) {
+  const ways = await streetsNear(centerLat, centerLon);
+  if (!ways.length) return null;
+  const want = normStreet(streetName);
+  const core = want.replace(/^(north|south|east|west)\s+/, '').replace(/\s+(street|avenue|drive|road|boulevard|lane|court|place|circle|parkway|terrace|trail|way)$/, '');
+  const kx = Math.cos((centerLat * Math.PI) / 180) * 111320, ky = 110540;
+  const local = g => [(g.lon - centerLon) * kx, (g.lat - centerLat) * ky];
+  let best = null;
+  for (const w of ways) {
+    const name = normStreet(w.tags.name);
+    const match = want && (name === want ? 2 : core && name.includes(core) ? 1 : 0);
+    const pts = w.geometry.map(local);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+      const px = ax + t * dx, py = ay + t * dy;
+      const d = Math.hypot(px, py);
+      const score = d - (match === 2 ? 1000 : match === 1 ? 500 : 0);
+      if (!best || score < best.score) best = { score, d, px, py, match, name: w.tags.name };
+    }
+  }
+  if (!best || best.d > 120) return null;
+  const bearing = ((Math.atan2(best.px, best.py) * 180) / Math.PI + 360) % 360;
+  return { bearing, street: best.name, matched: best.match > 0, meters: Math.round(best.d) };
+}
+
+export const COMPASS8 = ['North', 'Northeast', 'East', 'Southeast', 'South', 'Southwest', 'West', 'Northwest'];
+export const compass8 = b => COMPASS8[Math.round((((b % 360) + 360) % 360) / 45) % 8];
+export const COMPASS4 = { N: 0, E: 90, S: 180, W: 270 };
+export const NAME4 = { N: 'North', E: 'East', S: 'South', W: 'West' };
+
+// Label the street side and the back on the photo.
+export function drawSides(canvas, view, layout, front) {
+  if (front == null || !layout) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = canvas.width / view.w;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const [cx, cy] = layout.center;
+  const sx = (cx - view.x0) * view.k, sy = (cy - view.y0) * view.k;
+  const reach = (layout.extent / 2) * view.k + 22;
+  const chip = (bearing, text, fill, ink) => {
+    const r = (bearing * Math.PI) / 180;
+    let x = sx + Math.sin(r) * reach, y = sy - Math.cos(r) * reach;
+    ctx.font = '700 12px "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, sans-serif';
+    const w = ctx.measureText(text).width + 18, h = 24;
+    x = Math.max(w / 2 + 6, Math.min(view.w - w / 2 - 6, x));
+    y = Math.max(h / 2 + 6, Math.min(view.h - h / 2 - 6, y));
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, 12);
+    ctx.fill();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y + 0.5);
+  };
+  chip(front, 'Front (street)', '#f4cc2a', '#141f48');
+  chip(front + 180, 'Back', '#ffffff', '#141f48');
 }

@@ -488,7 +488,7 @@ function renderPractice() {
       <div class="flashes">${top.map((a, i) => `
         <button class="flash" type="button" data-flip="${a.id}" aria-pressed="false">
           <span class="flash-front"><small>${i + 1} of 5. They say</small><b>“${esc(a.label)}”</b><em>Tap to see a good answer</em></span>
-          <span class="flash-back"><small>You say</small><span class="flash-say">${fillNames(a.say)}</span>${a.next ? `<em>${fillNames(a.next)}</em>` : ''}</span>
+          <span class="flash-back"><small>${i + 1} of 5: “${esc(a.label)}”. You say</small><span class="flash-say">${fillNames(a.say)}</span>${a.next ? `<em>${fillNames(a.next)}</em>` : ''}</span>
         </button>`).join('')}</div>
     </section>
     <details class="section acc"><summary class="section-title">More answers (${rest.length})</summary>

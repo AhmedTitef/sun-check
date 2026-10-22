@@ -1,7 +1,7 @@
 // Keeps the coach, the print kit and the page working with no signal in the store.
 // Only this site's own files are cached; map, sun and form requests go straight out.
 
-const VERSION = 'suncheck-v2';
+const VERSION = 'suncheck-v3';
 const SHELL = [
   './',
   './index.html',
@@ -28,6 +28,9 @@ const SHELL = [
   './assets/js/roof.js',
   './assets/js/estimate.js',
   './assets/js/bill.js',
+  './assets/js/i18n.js',
+  './assets/vendor/suncalc.js',
+  './assets/data/sce-zips.json',
   './assets/vendor/qrcode.js',
   './assets/img/icon.svg',
   './assets/img/icon-180.png',
